@@ -16,14 +16,17 @@ namespace NethTest
             public string ToAddr;
             public string FromAddr;
             public uint Amount;
+            public double Gas;
+            public string txHash;
         }
 
-        private static string connStr = "connetionString=Data Source=localhost\\SQLEXPRESS;Initial Catalog=WalletScrambler;";
+        private static string connStr = "Server=localhost\\SQLEXPRESS; Data Source=Data\\CRYPTOTRACK;Initial Catalog=Catalog;Trusted_Connection=true";
         private SqlConnection sqlConn;
 
         public bool ConnectToDatabase()
-        {
+        {    
             sqlConn = new SqlConnection(connStr);
+
             try
             {
                 sqlConn.Open();
@@ -44,7 +47,7 @@ namespace NethTest
 
             this.ConnectToDatabase();
 
-            string SelectStr = "SELECT 1 FROM Submissions ORDER BY time DESC;";
+            string SelectStr = "SELECT * FROM Scramble WHERE (completed = 0 AND txComplete = 0) ORDER BY time DESC;";
             SqlCommand command;
             SqlDataReader dataReader;
 
@@ -53,20 +56,31 @@ namespace NethTest
 
             if(dataReader.HasRows)
             {
-                while (dataReader.Read())
+                while (dataReader.Read() != false)
                 {
-                    Console.WriteLine(dataReader.GetValue(0) + " - " + dataReader.GetValue(1) + " - " + dataReader.GetValue(2));
-                    SE.FromAddr = dataReader.GetValue(0).ToString();
-                    SE.ToAddr = dataReader.GetValue(1).ToString();
+                    SE.FromAddr = Convert.ToString(dataReader[2]);
+                    SE.ToAddr = dataReader[3].ToString();
+
                     try
                     {
-                        SE.Amount = Convert.ToUInt32(dataReader.GetValue(2));
+                        SE.Amount = Convert.ToUInt32(dataReader[4]);
                     }
                     catch
                     {
                         Console.WriteLine("Failed to fetch SE.Amount (uint32) - no rows?");
                         return null;
                     }
+                    try
+                    {
+                        SE.Gas = Convert.ToDouble(dataReader[7]);
+                    }
+                    catch
+                    {
+                        Console.WriteLine("Failed to fetch SE.Amount (uint32) - no rows?");
+                        return null;
+                    }
+
+                    SE.txHash = Convert.ToString(dataReader[9]);
                 }
             }
 
@@ -79,3 +93,4 @@ namespace NethTest
 
     }
 }
+
