@@ -11,7 +11,7 @@ using Nethereum.Hex.HexConvertors.Extensions;
 using Nethereum.Contracts;
 using Nethereum.Web3;
 using Nethereum.RPC.Eth.DTOs;
-
+using NethTest;
 using Nethereum.JsonRpc.Client;
 using Nethereum.RPC.Eth.Transactions;
 using Nethereum.RPC;
@@ -21,26 +21,76 @@ using Newtonsoft.Json;
 using Nethereum.RPC.Infrastructure;
 using Nethereum.Hex.HexTypes;
 using Nethereum.RPC.Eth.Filters;
+using static NethTest.DBManager;
+using System.Threading;
 
 namespace NethTest
 {
     public class ERC20Sender
     {
         //This is the contract address of an already deployed smartcontract in the Mainnet
-        private static string ContractAddress { get; set; } = "0x37737ad7e32ed440c312910cfc4a2e4d52867caf"; //stays static for CHIMERA
+        private static string ContractAddress { get; set; } = "CONTRACT"; //stays static for CHIMERA
 
         private string FromAddr { get; set; }
         private string FromPrivKey { get; set; }
         private string ToAddr { get; set; }
         private uint Amount { get; set; }
 
-        public ERC20Sender(string From, string FromPvtKey, string To, uint Qty)
+        private uint Gas { get; set; }
+
+        private DBManager DBM { get; set; }
+
+        public ERC20Sender(string From, string FromPvtKey, string To, uint Qty, uint Gas)
         {
             this.FromAddr = From;
             this.FromPrivKey = FromPvtKey;
             this.ToAddr = To;
             this.Amount = Qty;
+            this.Gas = Gas;
         }
+
+        public void QueryForSubmissions()
+        {
+            DBM = new DBManager();
+            bool isLooping = true;
+            ScramblerEntry SE = null;
+
+            while (isLooping == true)
+            {
+                try
+                {
+                    SE = DBM.GetOldestEntry();
+                    
+                    if (SE == null)
+                    {
+                        Console.WriteLine("No current inputs...");
+                        continue;
+                    }
+                    else
+                    {
+                        Console.WriteLine(SE.FromAddr + " " + SE.ToAddr + " " + SE.Amount);
+
+
+                        //check if initial TX was successful
+
+                        //if successful, check the current balance, verify it's larger or equal to amount recv'd
+
+                        //send out payment to other middle wallet or end user
+
+                        //verify the end transaction succeeded
+
+
+                    }
+                }
+                catch
+                {
+                    Console.WriteLine("Failed to fetch SE or no current inputs...");
+                }
+
+                Thread.Sleep(3000);
+            }
+        }
+
 
         public async Task BalanceAsync()
         {
