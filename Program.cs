@@ -13,8 +13,9 @@ using Nethereum.Web3.Accounts.Managed;
 using NethTest;
 using static NethTest.DBManager;
 using Nethereum.JsonRpc.Client;
+using System.Threading;
 
-namespace Nethereum.CQS.SimpleTokenTransfer
+namespace NethTest
 {
     public class Program
     {
@@ -24,6 +25,7 @@ namespace Nethereum.CQS.SimpleTokenTransfer
             string FromAddr = args[0];
             string ToAddr = args[1];
             uint Amount = 0;
+            uint Gas = 0;
 
             try
             {
@@ -34,28 +36,21 @@ namespace Nethereum.CQS.SimpleTokenTransfer
                 Console.WriteLine("invalid command line argument: Amount [2]");
                 return;
             }
-
-            DBManager DB = new DBManager();
       
-            ScramblerEntry SE = DB.GetOldestEntry();
-
-            if(SE.FromAddr == String.Empty)
+            try
             {
-                Console.WriteLine("Couldn't fetch DB entry!");
+                Gas = Convert.ToUInt32(args[3]);
             }
+            catch
+            {
+                Console.WriteLine("invalid command line argument: Gas [3]");
+                return;         
+            }
+            
+            ERC20Sender Manager = new ERC20Sender(FromAddr, args[4], ToAddr, Amount, Gas);
 
-            Console.WriteLine(SE.FromAddr + " " + SE.ToAddr + " " + SE.Amount + " " + SE.Gas);
-
-
-            ERC20Sender Manager = new ERC20Sender(FromAddr, "GoAwayFromMyKeySour", ToAddr, Amount);
-
-            //todo: get complete transaction before sending off to next wallet
-            Console.WriteLine("Checking the balance");
-            Manager.BalanceAsync().Wait();
-
-            //Console.WriteLine("Transfering...");
-            Manager.TransferAsync(ToAddr, Amount).Wait();
-            Console.ReadLine();
+            Thread QueryThread = new Thread(Manager.QueryForSubmissions);
+            QueryThread.Start();
         }
     }
 }
