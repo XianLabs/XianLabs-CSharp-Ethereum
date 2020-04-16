@@ -1,26 +1,11 @@
 using System;
-using System.Linq;
 using System.Numerics;
-using System.Text;
 using System.Threading.Tasks;
 using Nethereum.ABI.FunctionEncoding.Attributes;
-using Nethereum.Contracts.CQS;
-using Nethereum.Util;
 using Nethereum.Web3.Accounts;
-using Nethereum.Hex.HexConvertors.Extensions;
 using Nethereum.Contracts;
 using Nethereum.Web3;
 using Nethereum.RPC.Eth.DTOs;
-using NethTest;
-using Nethereum.JsonRpc.Client;
-using Nethereum.RPC.Eth.Transactions;
-using Nethereum.RPC;
-using System.Reflection;
-using System.Net.Http;
-using Newtonsoft.Json;
-using Nethereum.RPC.Infrastructure;
-using Nethereum.Hex.HexTypes;
-using Nethereum.RPC.Eth.Filters;
 using static NethTest.DBManager;
 using System.Threading;
 
@@ -28,14 +13,15 @@ namespace NethTest
 {
     public class ERC20Sender
     {
-        //This is the contract address of an already deployed smartcontract in the Mainnet
-        private static string ContractAddress { get; set; } = "CONTRACT"; //stays static for CHIMERA
+        private string ContractAddress { get; set; }
+        private string newTxHash { get; set; }
 
         private string FromAddr { get; set; }
         private string FromPrivKey { get; set; }
         private string ToAddr { get; set; }
         private uint Amount { get; set; }
 
+        private BigInteger Balance { get; set; }
         private uint Gas { get; set; }
 
         private DBManager DBM { get; set; }
@@ -49,11 +35,61 @@ namespace NethTest
             this.Gas = Gas;
         }
 
+        public bool ForwardSubmission(ScramblerEntry SE)
+        {
+            if (SE.InitialFailed == true)
+                return false;
+
+            Console.WriteLine(SE.FromAddr + " " + SE.ToAddr + " " + SE.Amount);
+
+            //check if initial TX was successful
+            bool success = DidTransactionSucceed(SE.InitialTxHash);
+
+            if (success)
+            {
+                //if successful, check the current balance, verify it's larger or equal to amount recv'd
+                SE.InitialCompleted = true;
+
+                Console.WriteLine("Setting Contract Address: " + SE.ContractAddress);
+                this.ContractAddress = SE.ContractAddress;
+
+                BalanceAsync().Wait();
+
+                //send out payment to other middle wallet or end user
+                if (this.Balance > SE.Amount)
+                {
+                    if (this.ContractAddress != null)
+                    {
+                        Console.WriteLine("Transfering...");
+                        TransferAsync(this.ToAddr, this.Amount).Wait();
+                    }
+
+                    //verify the end transaction succeeded
+                    while (!DidTransactionSucceed(this.newTxHash))
+                    {
+                        Console.WriteLine("waiting for new Tx to succeed: " + this.newTxHash);
+                    }
+
+                    //change db to impact new effects
+                    Console.WriteLine("Success! Check: " + this.newTxHash);
+                   
+                }
+            }
+            else
+            {
+                SE.InitialCompleted = false;
+                Console.WriteLine("Initial send failed from user, delete their entry from DB and notify them");
+                return false;
+            }
+
+            return true;
+        }
+
         public void QueryForSubmissions()
         {
             DBM = new DBManager();
             bool isLooping = true;
-            ScramblerEntry SE = null;
+            ScramblerEntry SE;
 
             while (isLooping == true)
             {
@@ -68,18 +104,14 @@ namespace NethTest
                     }
                     else
                     {
-                        Console.WriteLine(SE.FromAddr + " " + SE.ToAddr + " " + SE.Amount);
-
-
-                        //check if initial TX was successful
-
-                        //if successful, check the current balance, verify it's larger or equal to amount recv'd
-
-                        //send out payment to other middle wallet or end user
-
-                        //verify the end transaction succeeded
-
-
+                        if(ForwardSubmission(SE))
+                        {
+                            Console.WriteLine("Forwarded submission: " + SE.EndingTxHash);
+                        }
+                        else
+                        {
+                            Console.WriteLine("Failed to redirect submission: " + SE.InitialTxHash);
+                        }
                     }
                 }
                 catch
@@ -90,7 +122,6 @@ namespace NethTest
                 Thread.Sleep(3000);
             }
         }
-
 
         public async Task BalanceAsync()
         {
@@ -108,11 +139,11 @@ namespace NethTest
                 Owner = senderAddress,
             };
 
-
             var balanceHandler = web3.Eth.GetContractQueryHandler<BalanceOfFunction>();
             var balance = await balanceHandler.QueryAsync<BigInteger>(contractAddress, balanceOfFunctionMessage);
      
             Console.WriteLine("Balance of token: " + balance);
+            this.Balance = balance;
         }
 
         public async Task TransferAsync(string to, uint amount)
@@ -132,7 +163,7 @@ namespace NethTest
                 To = to,
                 TokenAmount = amount,
                 //Set our own price
-                Gas = 1000000,
+                Gas = 100000, //todo: calculate gas price
 
             };
 
@@ -141,7 +172,7 @@ namespace NethTest
             var transferHandler = web3.Eth.GetContractTransactionHandler<TransferFunction>();
             var transactionHash = await transferHandler.SendRequestAsync(ContractAddress, transactionMessage);
             Console.WriteLine("Transfer txHash: " + transactionHash);
-            
+            this.newTxHash = Convert.ToString(transactionHash);           
         }
 
 
@@ -248,3 +279,4 @@ namespace NethTest
         }
     }
 }
+
