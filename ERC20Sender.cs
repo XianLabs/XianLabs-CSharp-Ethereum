@@ -13,6 +13,7 @@ namespace NethTest
 {
     public class ERC20Sender
     {
+        //This is the contract address of an already deployed smartcontract in the Mainnet
         private string ContractAddress { get; set; }
         private string newTxHash { get; set; }
 
@@ -24,15 +25,18 @@ namespace NethTest
         private BigInteger Balance { get; set; }
         private uint Gas { get; set; }
 
+        private uint Decimals { get; set; }
+
         private DBManager DBM { get; set; }
 
-        public ERC20Sender(string From, string FromPvtKey, string To, uint Qty, uint Gas)
+        public ERC20Sender(string From, string FromPvtKey, string To, uint Qty, uint Gas, uint Decimals)
         {
             this.FromAddr = From;
             this.FromPrivKey = FromPvtKey;
             this.ToAddr = To;
             this.Amount = Qty;
             this.Gas = Gas;
+            this.Decimals = Decimals;
         }
 
         public bool ForwardSubmission(ScramblerEntry SE)
@@ -60,23 +64,36 @@ namespace NethTest
                 {
                     if (this.ContractAddress != null)
                     {
-                        Console.WriteLine("Transfering...");
-                        TransferAsync(this.ToAddr, this.Amount).Wait();
+                        //for, x = 1, * 10 for each decimal...
+                        uint x = 1;
+                        for(uint y = 0; y < this.Decimals; y++)
+                        {
+                            x = x * 10;
+                        }
+
+                        Console.WriteLine("Transfering: " + this.ToAddr + " Amount: " + this.Amount * x);
+                        TransferAsync(this.ToAddr, this.Amount * x).Wait();
                     }
 
-                    //verify the end transaction succeeded
-                    while (!DidTransactionSucceed(this.newTxHash))
+                    //verify the end transaction succeeded, add some timer or failsafe to this doesnt get stuck
+                    while (IsTransactionPending(this.newTxHash))
                     {
                         Console.WriteLine("waiting for new Tx to succeed: " + this.newTxHash);
                     }
 
                     //change db to impact new effects
-                    Console.WriteLine("Success! Check: " + this.newTxHash);
                    
+                    Console.WriteLine("Success! Check: " + this.newTxHash);
+                    SE.nCompleted = true;
+                    SE.EndingTxHash = this.newTxHash;
+                    DBM.AlterRecord(SE);
                 }
             }
             else
             {
+                //update db to tell this was a fail initially
+
+
                 SE.InitialCompleted = false;
                 Console.WriteLine("Initial send failed from user, delete their entry from DB and notify them");
                 return false;
@@ -96,7 +113,8 @@ namespace NethTest
                 try
                 {
                     SE = DBM.GetOldestEntry();
-                    
+                    this.Amount = SE.Amount;
+
                     if (SE == null)
                     {
                         Console.WriteLine("No current inputs...");
@@ -117,11 +135,32 @@ namespace NethTest
                 catch
                 {
                     Console.WriteLine("Failed to fetch SE or no current inputs...");
+
+
+                    //search for entries "left over?"
+                    ScramblerEntry S = DBM.GetUnsentEntry();
+                    if(S.InitialTxHash == null)
+                    {
+                        S.InitialFailed = true;
+                        S.InitialCompleted = false;
+                    }
+                    else
+                    {
+                        if(DidTransactionSucceed(S.InitialTxHash))
+                        {
+                            S.InitialFailed = false;
+                            S.InitialCompleted = true;
+                            DBM.AlterRecord(S);
+                        }
+                    }
+
+
                 }
 
                 Thread.Sleep(3000);
             }
         }
+
 
         public async Task BalanceAsync()
         {
@@ -163,7 +202,7 @@ namespace NethTest
                 To = to,
                 TokenAmount = amount,
                 //Set our own price
-                Gas = 100000, //todo: calculate gas price
+                Gas = 100000,
 
             };
 
@@ -188,6 +227,25 @@ namespace NethTest
             Console.WriteLine("Success: " + rcpt.Succeeded());
 
             return rcpt.Succeeded();
+        }
+
+
+        public bool IsTransactionPending(string txid)
+        {
+            // Note: in this sample, a special INFURA API key is used
+            var url = "https://mainnet.infura.io/v3/b2a3829b4de548e38f1f6c79b3d447b9";
+
+            var web3 = new Web3(new Account(this.FromPrivKey), url); //creates valid/sign account
+
+            var rcpt = web3.TransactionManager.TransactionReceiptService.PollForReceiptAsync(txid).Result;
+
+            Console.WriteLine("Pending: " + rcpt.BlockNumber);
+
+            if (rcpt.BlockNumber == null)
+                return true;
+
+            else
+                return false;
         }
 
         internal async Task<ulong> GetTransactionAmount(string txid)
@@ -222,11 +280,6 @@ namespace NethTest
             return amountSent;
         }
 
-        /// <summary>
-        /// Attempt to get the raw hex directly from the geth node
-        /// </summary>
-        /// <param name="txid"></param>
-        /// <returns></returns>
         internal async Task<string> GetTransaction(string txid)
         {
             // Note: in this sample, a special INFURA API key is used
