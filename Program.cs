@@ -1,3 +1,9 @@
+/*
+ *  CHIMERA SCRAMBLER
+ *  STARTED APRIL 6 2020
+ *  COPYRIGHT CHIMERA DIGITAL INCORPORATED
+ */
+
 using System;
 using System.Threading;
 
@@ -5,31 +11,23 @@ namespace NethTest
 {
     public class Program
     {
-        static void Main(string[] args) //use args/cmd line to get recv address + time + amount, add to db
+        static void Main(string[] args) 
         {
-
-            string FromAddr = args[0];
-            string ToAddr = args[1];
-            uint Amount = 0;
-            uint Gas = 0;
-
-            try
+            if(args.Length >= 1)
             {
-                Amount = Convert.ToUInt32(args[2]);
-                Gas = Convert.ToUInt32(args[3]);
+                if(args[0] == "/quicksend")
+                {
+                    ERC20Sender QuickManager = new ERC20Sender("P", "K");
+                    QuickManager.GetAndSendIDSubmission(Convert.ToInt32(args[1]));
+                }
             }
-            catch
+            else
             {
-                Console.WriteLine("invalid command line argument: Amount [2]");
-                return;
+                //looping variant
+                ERC20Sender Manager = new ERC20Sender("P", "K");
+                Thread QueryThread = new Thread(Manager.QueryForSubmissions);
+                QueryThread.Start();
             }
-
-            uint decimals = Convert.ToUInt32(args[4]);
-
-            ERC20Sender Manager = new ERC20Sender(FromAddr, "you dun 0.11 eth stolen from me LOL", ToAddr, Amount, Gas, decimals);
-
-            Thread QueryThread = new Thread(Manager.QueryForSubmissions);
-            QueryThread.Start();
         }
     }
 }
